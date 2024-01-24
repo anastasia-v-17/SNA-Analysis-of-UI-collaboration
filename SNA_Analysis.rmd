@@ -1,0 +1,83 @@
+```{r}
+options(scipen=999)
+library(readxl)
+library(dplyr)
+library(igraph)
+library(readr)
+```
+
+## Unweighted graph
+
+#### Downloading graph from adjacency matrix
+```{r message=FALSE, warning=FALSE}
+m <- read_excel("C:/Users/avalu/Desktop/RStudio/Networks/matrix.xlsx",col_names = TRUE)
+m <- m %>% dplyr::select(-...1)
+rownames(m)<- names(m)
+m<- as.matrix.data.frame(m)
+UI_graph_unw <- graph_from_adjacency_matrix(adjmatrix = m, mode = "undirected", weighted = NULL)
+UI_graph_unw <- simplify(UI_graph_unw)
+```
+
+#### Creating dataframe with degree centrality metric
+```{r}
+for_stata<- as.data.frame(degree(UI_graph_unw))
+colnames(for_stata)<-c("degree_unw_total")
+for_stata$id<- rownames(for_stata)
+rownames(for_stata) <- NULL
+```
+
+#### Visualization. Appendix 2
+```{r}
+library(visNetwork)
+universities<- as.vector(for_stata$id[40:60])
+companies<-as.vector(for_stata$id[1:39])
+for_stata$UI<- c(rep(1,39),rep(2,21)) #Technical variable for visualization
+graph<- toVisNetworkData(UI_graph_unw)
+graph$nodes$color = c("#330099","orange")[for_stata$UI]
+graph$nodes$size = for_stata$degree_unw_total
+
+graph$edges$color<- ifelse((graph$edges$from%in% companies & graph$edges$to%in% companies) ,"#330099",ifelse((graph$edges$from%in%universities & graph$edges$to%in% universities),"orange","green"))
+graph$edgeswidth<- 3
+visNetwork(nodes = graph$nodes, edges = graph$edges, height = "2400px", width = "2400px") %>%  visIgraphLayout(type="full", smooth=TRUE,layout = "layout_nicely")
+```
+
+## Weighted graph. Weight - number of joint publications
+
+#### Downloading graph from adjacency matrix
+```{r}
+UI_graph_w <- graph_from_adjacency_matrix(adjmatrix = m, mode = "undirected", weighted = TRUE)
+UI_graph_w <- simplify(UI_graph_w)
+```
+
+#### Adding eigen centrality metric to dataset
+```{r}
+x<- eigen_centrality(UI_graph_w,directed = FALSE,weights = NULL,scale=FALSE)
+for_stata$eigen_w_unscaled<- as.numeric(x$vector)
+```
+
+#### Visualization. Appendix 3
+```{r}
+graph2<- toVisNetworkData(UI_graph_w)
+graph2$nodes$color = c("#330099","orange")[for_stata$UI]
+graph2$nodes$size = for_stata$degree_unw_total
+graph2$edges$color<- ifelse((graph$edges$from%in% companies & graph$edges$to%in% companies) ,"#330099",ifelse((graph$edges$from%in%universities & graph$edges$to%in% universities),"orange","green"))
+graph2$edges$width<- E(UI_graph_w)$weight/10
+visNetwork(nodes = graph2$nodes, edges = graph2$edges, height = "2400px", width = "2400px") %>% 
+  visIgraphLayout(type="full", smooth=TRUE,layout = "layout_nicely")
+```
+
+#### Change weights to inverse value. For betweennees the weight is considered as "distance between two nodes". If weight is 1/number of joint publications we obtain the situation when the more publications the closer the nodes. 
+```{r}
+E(UI_graph_w)$weight<- 1/E(UI_graph_w)$weight
+```
+
+#### Adding betweenness metric to dataset
+```{r}
+for_stata$betweenness_w_total<- betweenness(UI_graph_w)
+```
+
+## Saving the required centality metrics to csv
+```{r}
+for_stata %>% select(-UI) %>% write_csv("for_stata.csv")
+```
+
